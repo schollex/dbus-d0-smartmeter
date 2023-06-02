@@ -305,6 +305,9 @@ class DbusttysmartmeterService:
     return values
 
   def _convertObisToValues(self, values):
+    if '100700' not in values:
+      logging.warning('OBIS Code 100700 (power) is missing')
+      return False
     try:
       if not ('240700' in values and '380700' in values and '4c0700' in values):
         try:
