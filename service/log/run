@@ -1,6 +1,6 @@
 #!/bin/sh
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-SERVICE_NAME=$(basename $(cd $SCRIPT_DIR/../..; pwd))
+#set -x
+SCRIPT_DIR=$( realpath $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd ) )
+SERVICE_NAME=$( basename $( realpath $SCRIPT_DIR/../.. ) )
 exec 2>&1
 exec multilog t s25000 n4 /var/log/$SERVICE_NAME
-#exec multilog t s25000 n4 /var/log/dbus-d0-gridmeter
