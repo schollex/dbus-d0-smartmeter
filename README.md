@@ -184,3 +184,4 @@ If you have to modify the regex, take care of the match-groups. These match-grou
 * value itself
 
 must remain. Regex-hint: `(?:` is not the beginning of a match-group!
+For rare situations where the value-match-group contains too much bytes, there is a logic built in the script that truncates the value-bytes according to "length of value".
