@@ -40,9 +40,22 @@ chmod a+x /data/dbus-d0-smartmeter/install.sh
 
 You have to edit `config.ini`. Please note the comments there as explanation!
 
-You also have to set the `DEV`-variable within `service/run` to your USB-TTY-adapter. E.g. for me, it's `DEV='/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller-if00-port0'`
 
-TODO: further explanations!
+| Config value        | Explanation   |
+|-------------------- | ------------- |
+| Logging | set loglevel for `current.log` respectivly `/var/log/dbus-d0-smartmeter/current.log`. Possible values among others are `DEBUG`, `INFO`, `WARING` |
+| SignOfLiveLog | if >0, interval in minutes to give stats (= number of received correct SML-data) |
+| CustomName | user-friendly name for the gridmeter within the Venus web-GUI |
+| TimeoutInterval | if no valid data is received within this millisencods-interval, the DBUS-service-property Connected will be set to 0 |
+| ExitOnTimeout | if set to `1` instead of `0`, the script will terminate itself which erases service from DBUS. This is indicated as "not connected" within the web-GUI |
+| ExitAfterHours | if >0. the script will terminate itself after these hours |
+| ChangeSmartmeter | if set to `1` instead of `0`, DBUS-property com.victronenergy.settings/Settings/CGwacs/RunWithoutGridMeter respectivly the web-GUI-setting Settings > ESS > Grid Metering is changed. If { no } grid metering can be done, property is set to `1` { `0` } respectivly GUI to `Inverter/Charger` { `External meter` }. Without this, e.g. if grid metering is stall, ESS would work on old power-assumptions. If set to `External meter` and the battery is fully charged, Victron OS would stop MPPT from producing power. With setup `Inverter/Charger`, MPPT is still producing power which is completly fed in to AC by Multiplus. |
+| PostRawdata | if set to `1` instead of `0`, SML-rawdata is post to DBUS-gridmeter-property `/rawdata` |
+| Regex | Here is the magic. See Debugging-section below. |
+| ReadInterval within [USB]-Section | millisecond-interval the script reads data from TTY. This should be obviously <1000. Otherwise, the TTY-buffer would fill up resulting in outdated data |
+| Devicename within [USB]-Section | provides the correct name listed within /dev/serial/by-id/. This TTY is only used when the scipt is manually started without command-line-arguments. |
+
+You have to set the `DEV`-variable within `service/run` to your USB-TTY-adapter. E.g. for me, it's `DEV='/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller-if00-port0'`. Because `service/run` will identify the corresponding /dev/ttyUSB-device, stop the serial-starter for this TTY and start the script with this TTY as command-line-argument.
  
 ## Usage
 
@@ -117,27 +130,57 @@ Otherwise, you shoud set `Logging=Debug`. After modifying `config.ini` you have 
 
 ````
 [...]
-2023-06-02 10:59:23,95 root DEBUG rawdata=False
-2023-06-02 10:59:23,194 root DEBUG rawdata=1b1b1b1b0101010176......00001b1b1b1b1a01afde
-2023-06-02 10:59:23,198 root DEBUG 600100 => 010101010b0a....01
-2023-06-02 10:59:23,199 root DEBUG ---
-2023-06-02 10:59:23,200 root DEBUG ['1e', 'ff', '6', '3', 'd1bc']
-2023-06-02 10:59:23,202 root DEBUG 5369.200000000001
-2023-06-02 10:59:23,203 root DEBUG 010800 => 641c79047262016416f017621e52ff63d1bc01
-2023-06-02 10:59:23,204 root DEBUG wh
-2023-06-02 10:59:23,206 root DEBUG ---
-2023-06-02 10:59:23,207 root DEBUG ['1e', 'ff', '6', '4', '55c65e']
-2023-06-02 10:59:23,208 root DEBUG 562134.2000000001
-2023-06-02 10:59:23,210 root DEBUG 020800 => 017262016416f017621e52ff6455c65e01
-2023-06-02 10:59:23,211 root DEBUG whgiven
-2023-06-02 10:59:23,212 root DEBUG ---
-2023-06-02 10:59:23,219 root DEBUG 100700 => 0101621b52fe590000000000f58274010101630402007605eb7e43006200620072630201710163617800001b1b1b1b1a01afde
-2023-06-02 10:59:23,221 root DEBUG ---
-2023-06-02 10:59:23,223 root DEBUG obisdata={'010800': 5369.200000000001, '020800': 562134.2000000001}
-2023-06-02 10:59:23,224 root DEBUG OBIS 10.7.0 current power is missing
-2023-06-02 10:59:23,226 root DEBUG values=False
-2023-06-02 10:59:23,295 root DEBUG rawdata=False
-2023-06-02 10:59:23,396 root DEBUG rawdata=False
+2023-06-03 06:07:30,107 root DEBUG 600100 => 010101010b0a01445a4700016e70f501
+2023-06-03 06:07:30,109 root DEBUG ---
+2023-06-03 06:07:30,110 root DEBUG ['1e', 'ff', '6', '3', 'd5ba']
+2023-06-03 06:07:30,111 root DEBUG 5471.400000000001
+2023-06-03 06:07:30,113 root DEBUG 010800 => 641c21047262016417fd30621e52ff63d5ba01
+2023-06-03 06:07:30,114 root DEBUG wh
+2023-06-03 06:07:30,115 root DEBUG ---
+2023-06-03 06:07:30,117 root DEBUG ['1e', 'ff', '6', '4', '598acd']
+2023-06-03 06:07:30,118 root DEBUG 586823.7000000001
+2023-06-03 06:07:30,119 root DEBUG 020800 => 017262016417fd30621e52ff64598acd01
+2023-06-03 06:07:30,120 root DEBUG whgiven
+2023-06-03 06:07:30,121 root DEBUG ---
+2023-06-03 06:07:30,125 root DEBUG 100700 => 0101621b52fe59000000000004d85f01010163bd0100760536a6460[...]
+2023-06-03 06:07:30,128 root DEBUG ---
+2023-06-03 06:07:30,129 root DEBUG obisdata={'010800': 5471.400000000001, '020800': 586823.7000000001}
+2023-06-03 06:07:30,131 root WARNING OBIS 10.7.0 current power is missing
+2023-06-03 06:07:30,204 root DEBUG rawdata=False
+2023-06-03 06:07:30,305 root DEBUG rawdata=False
+[...]
 ````
 
 OBIS 10.7.0 cannot be evaluated. This means that you have to adjust `Regex`. In the example above, the data could be evaluated with `Regex=^(?:..){2,}?62(.{2})52([0f].)([56])([2-9])((?:..){1,8})01` instead of `Regex=^(?:..){2,}?62(.{2})52([0f].)([56])([2-5])((?:..){1,4})01`
+
+Why?
+(For explanation on OBIS, see https://www.stefan-weigert.de/php_loader/sml.php)
+
+This ...`f50177070100010800ff641c21047262016417fd30621e52ff63d5ba0177070100020800ff017262016417fd30621e52ff64598acd0177070100100700ff0101621b52fe59000000000004d85f01010163bd0100760536a6460`... is the relevant extract of rawdata.
+Splitting is done on `77070100` which leads to
+````
+f501
+77070100
+010800ff641c21047262016417fd30621e52ff63d5ba01
+77070100
+020800ff017262016417fd30621e52ff64598acd01
+77070100
+100700ff0101621b52fe59000000000000d85f01010163bd0100760536a6460
+````
+We want to analyse the last element `100700ff0101621b52fe59000000000000d85f01010163bd0100760536a6460`:
+`01` and `01` are the first 2 elements in this structure. They have a minimum length of 2 bytes (regex `^(?:..){2,}?`).
+The next element is always unsigned `6` and the data-part is 1 byte `2`: `1b` (regex `62(.{2})`) - this is the physical unit.
+The value itself has an power-10-exponent which is always signed `5` and the data-part is always 1 byte `2`: `fe` = -2 (regex `52([0f].)`).
+The value itself is signed `5` and the data-part are 8 bytes `9`: `000000000000d85f` = 55391. Regex was `([56])([2-5])((?:..){1,4})` which will not match her. But regex 
+`([56])([2-9])((?:..){1,8})` will match. After the value, the data-structure ends with `01` (regex `01`). But in this example, further bytes follow because this was the last OBIS-data.
+The real value ist 55391*10^(-2) W = 553.91 W
+
+If you have to modify the regex, take care of the match-groups. These match-groups
+
+* physical unit
+* power-10-exponent
+* sign of value
+* length of value
+* value itself
+
+must remain. Regex-hint: `(?:` is not the beginning of a match-group!
