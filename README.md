@@ -44,6 +44,7 @@ You have to edit `config.ini`. Please note the comments there as explanation!
 | Config value        | Explanation   |
 |-------------------- | ------------- |
 | Logging | set loglevel for `current.log` respectivly `/var/log/dbus-d0-smartmeter/current.log`. Possible values among others are `DEBUG`, `INFO`, `WARING` |
+| Protocol | set protocol to `SML` or `D0` |
 | SignOfLiveLog | if >0, interval in minutes to give stats (= number of received correct SML-data) |
 | CustomName | user-friendly name for the gridmeter within the Venus web-GUI |
 | TimeoutInterval | if no valid data is received within this millisencods-interval, the DBUS-service-property Connected will be set to 0 |
@@ -54,6 +55,7 @@ You have to edit `config.ini`. Please note the comments there as explanation!
 | Regex | Here is the magic. See Debugging-section below. |
 | ReadInterval within [USB]-Section | millisecond-interval the script reads data from TTY. This should be obviously <1000. Otherwise, the TTY-buffer would fill up resulting in outdated data |
 | Devicename within [USB]-Section | provides the correct name listed within /dev/serial/by-id/. This TTY is only used when the scipt is manually started without command-line-arguments. |
+| Bytesize | change the serial connection byte size typical `8` for some D0 meters `7` |
 
 You have to set the `DEV`-variable within `service/run` to your USB-TTY-adapter. E.g. for me, it's `DEV='/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller-if00-port0'`. Because `service/run` will identify the corresponding /dev/ttyUSB-device, stop the serial-starter for this TTY and start the script with this TTY as command-line-argument.
  
