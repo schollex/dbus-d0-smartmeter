@@ -124,14 +124,14 @@ class DbusttysmartmeterService:
     deviceinstance = int(config['DEFAULT']['Deviceinstance'])
     customname = config['DEFAULT']['CustomName']
     devicename = config[accesstype]['Devicename']
-    devicepath = '/dev/serial/by-id/%s' %devicename
+    deviceserialid = '/dev/serial/by-id/%s' %devicename
+    devicepath = os.popen('readlink -f /dev/serial/by-id/%s' %devicename).read().replace('\n', '')
+    ttyname = devicepath.replace('/dev/', '')
+    os.system('/opt/victronenergy/serial-starter/stop-tty.sh %s' %ttyname)
+
     self._initialized = not (len(sys.argv) >= 2)
     logging.info("current initialized-state = %r" %self._initialized)
-    if self._initialized:
-      devicename = config[accesstype]['Devicename']
-    else:
-      devicename = sys.argv[1]
-      devicepath = '/dev/%s' %devicename
+
     devicebaudrate = int(config[accesstype]['Baudrate'])
     readinterval = int(config[accesstype]['ReadInterval'])
     self._timeoutInterval = int(config['DEFAULT']['TimeoutInterval'])
