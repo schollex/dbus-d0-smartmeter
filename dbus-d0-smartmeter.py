@@ -4,6 +4,7 @@
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
+import struct
 import os
 import platform
 if sys.version_info.major == 2:
@@ -29,10 +30,8 @@ signal.signal(signal.SIGTERM, signal_term_handler)
 
 #import subprocess
 
-start = '1b1b1b1b01010101'
-end = '1b1b1b1b1a'
-obisintro = '77070100'
 obis = {
+        # SML Protocol
         '100700': 'w',
         '240700': 'w_l1',
         '380700': 'w_l2',
@@ -51,6 +50,13 @@ obis = {
         '510704': 'd_a1v1',
         '51070f': 'd_a2v2',
         '51071a': 'd_a3v3',
+        # D0 Protocol
+        '312e372e323535': 'w',
+        '32312e372e323535': 'w_l1',
+        '34312e372e323535': 'w_l2',
+        '36312e372e323535': 'w_l3',
+        '312e382e30': 'wh',
+        '322e382e30': 'whgiven',
        }
 calcs = {
          #'240700': 'cos(values[\'510704\']/180.0*pi)*values[\'200700\']*values[\'1f0700\']',
@@ -121,24 +127,27 @@ class DbusttysmartmeterService:
   def __init__(self, config, servicename, paths, productname='ttysmartmeter', connection='ttysmartmeter service'):
     #config = self._getConfig()
     accesstype = config['DEFAULT']['AccessType']
+    self._protocol = config['DEFAULT']['Protocol']
     deviceinstance = int(config['DEFAULT']['Deviceinstance'])
     customname = config['DEFAULT']['CustomName']
     devicename = config[accesstype]['Devicename']
-    devicepath = '/dev/serial/by-id/%s' %devicename
+    deviceserialid = '/dev/serial/by-id/%s' %devicename
+    devicepath = os.popen('readlink -f /dev/serial/by-id/%s' %devicename).read().replace('\n', '')
+    ttyname = devicepath.replace('/dev/', '')
+    os.system('/opt/victronenergy/serial-starter/stop-tty.sh %s' %ttyname)
+
     self._initialized = not (len(sys.argv) >= 2)
     logging.info("current initialized-state = %r" %self._initialized)
-    if self._initialized:
-      devicename = config[accesstype]['Devicename']
-    else:
-      devicename = sys.argv[1]
-      devicepath = '/dev/%s' %devicename
+
     devicebaudrate = int(config[accesstype]['Baudrate'])
+    devicebytesize = int(config[accesstype]['Bytesize'])
     readinterval = int(config[accesstype]['ReadInterval'])
     self._timeoutInterval = int(config['DEFAULT']['TimeoutInterval'])
     self._exitOnTimeout = int(config['DEFAULT']['ExitOnTimeout'])
     exitAfterHours = float(config['DEFAULT']['ExitAfterHours'])
     self._eurPerKwh = float(config['DEFAULT']['EurPerKwh'])
-    self._regex = config['DEFAULT']['Regex']
+    self._SMLregex = config['SML']['Regex']
+    self._D0regex = config['D0']['Regex']
     self._postRawdata = int(config['DEFAULT']['PostRawdata'])
     self._changeSmartmeter = int(config['DEFAULT']['ChangeSmartmeter'])
     if self._changeSmartmeter:
@@ -150,13 +159,27 @@ class DbusttysmartmeterService:
         eventCallback=handle_changed_setting
       )
       self._setConnected(0)
+
+    # get len of real end characters and start, end, intro commands
+    global hexcount, start, end, obisintro
+    if self._protocol == 'SML':
+        hexcount = 3
+        start = '1b1b1b1b01010101'
+        end = '1b1b1b1b1a'
+        obisintro = '77070100'
+    elif self._protocol == 'D0':
+        hexcount = 2
+        start = '2f'
+        end = '21'
+        obisintro='312d303a'
+
     logging.info("Opening %s" %devicepath)
     self._port = serial.Serial(
       port=devicepath,
       baudrate=devicebaudrate,
       parity=serial.PARITY_NONE,
       stopbits=serial.STOPBITS_ONE,
-      bytesize=serial.EIGHTBITS
+      bytesize=devicebytesize
     )
     self._port.reset_input_buffer()
     self._port.reset_output_buffer()
@@ -244,15 +267,17 @@ class DbusttysmartmeterService:
     chars = self._port.read(self._port.inWaiting())
     for char in chars:
       self._rawdata += format(char, '02x')
+
     pos = self._rawdata.find(end)
-    if (pos == -1) or (pos+len(end)+6 > len(self._rawdata)):
-      return False
-    data = self._rawdata[:pos+len(end)+6]
-    self._rawdata = self._rawdata[pos+len(end)+6:]
+    if (pos == -1) or (pos+len(end)+(hexcount*2) > len(self._rawdata)):
+        return False
+    data = self._rawdata[:pos+len(end)+(hexcount*2)]
+    self._rawdata = self._rawdata[pos+len(end)+(hexcount*2):]
     pos = data.rfind(start)
     if (pos == -1):
-      return False
+        return False
     return data[pos:]
+   
 
   # https://www.stefan-weigert.de/php_loader/sml.php
   def _validateChecksum(self, data):
@@ -265,7 +290,7 @@ class DbusttysmartmeterService:
     crcsum ^= 0xffff
     return (crc_rx == crcsum)
 
-  def _extractObisFromRawData(self, data):
+  def _extractObisFromSMLRawData(self, data):
     values = {}
     for s in data.split(obisintro):
        value = None
@@ -274,7 +299,7 @@ class DbusttysmartmeterService:
        (object, raw) = (g.group(1), g.group(2))
        # Groups: physical unit, scalar, signed or unsigned, value-length 2-5 repectivly 1-4 bytes, value itself
        #g2 = match('^(?:..){2,}?62(.{2})52([0f].)([56])([2-5])((?:..){1,4})01', raw)
-       g2 = match(self._regex, raw)
+       g2 = match(self._SMLregex, raw)
        if g2 and len(g2.group(5))/2 >= int(g2.group(4))-1:
          logging.debug([g2.group(1), g2.group(2), g2.group(3), g2.group(4), g2.group(5)])
          signed = (g2.group(3) == '5')
@@ -304,7 +329,66 @@ class DbusttysmartmeterService:
 
     return values
 
-  def _convertObisToValues(self, values):
+  def _extractObisFromD0RawData(self, data):
+    values = {}
+    for s in data.split(obisintro):
+       value = None
+       g = match(self._D0regex, s)
+       if not g: continue
+       (object, raw) = (g.group(1), g.group(2))
+       # Groups: obis, value itself, physical unit
+       if bytes.fromhex(g.group(3)).decode('utf-8') == '*W':
+          value = int(float(bytes.fromhex(g.group(2)).decode('utf-8')))
+       elif bytes.fromhex(g.group(3)).decode('utf-8') == '*kWh':
+          value = float(bytes.fromhex(g.group(2)).decode('utf-8'))
+       logging.debug(value)
+
+       ###
+       if not self._initialized:
+         if object in obis:
+           configured = obis[object]
+         else:
+           configured = 'unused'
+         logging.info('received OBIS Code %s (%s)' %(object, configured))
+       logging.debug(object + ' => ' + raw)
+       if object in obis and value is not None:
+         values[object] = value
+         logging.debug(obis[object])
+       logging.debug('---')
+
+    return values
+
+  def _convertD0ObisToValues(self, values):
+    if '312e372e323535' not in values:
+      logging.warning('OBIS Code 312e372e323535 (power) is missing')
+      return False
+    try:
+      ret = {
+        '/Ac/Power': values['312e372e323535'],
+        '/Ac/Energy/Forward': values['312e382e30'],
+        '/Ac/Energy/Reverse': values['322e382e30'],
+
+        '/Ac/L2/Energy/Forward': round(values['322e382e30']*self._eurPerKwh, 2),
+        '/Ac/L3/Energy/Forward': values['322e382e30'],
+
+        '/Ac/L1/Voltage': 230,
+        '/Ac/L2/Voltage': 230,
+        '/Ac/L3/Voltage': 230,
+        '/Ac/L1/Current': round(values['32312e372e323535']/230, 2),
+        '/Ac/L2/Current': round(values['34312e372e323535']/230, 2),
+        '/Ac/L3/Current': round(values['36312e372e323535']/230, 2),
+        '/Ac/L1/Power': values['32312e372e323535'],
+        '/Ac/L2/Power': values['34312e372e323535'],
+        '/Ac/L3/Power': values['36312e372e323535'],
+      }
+      logging.debug('%s' %ret)
+    except Exception as e:
+      logging.debug('Error at _convertD0ObisToValues', exc_info=e)
+      return False
+    self._stats = self._stats+1
+    return ret
+
+  def _convertSMLObisToValues(self, values):
     if '100700' not in values:
       logging.warning('OBIS Code 100700 (power) is missing')
       return False
@@ -342,7 +426,7 @@ class DbusttysmartmeterService:
         '/Ac/L3/Power': round(values['4c0700']+thirddiff, 1),
       }
     except Exception as e:
-      logging.debug('Error at _convertObisToValues', exc_info=e)
+      logging.debug('Error at _convertSMLObisToValues', exc_info=e)
       return False
     self._stats = self._stats+1
     return ret
@@ -361,29 +445,41 @@ class DbusttysmartmeterService:
       rawdata = self._getTtyRawData()
       logging.debug('rawdata=%s' %rawdata)
       if rawdata:
-        if self._validateChecksum(rawdata):
-          # extract obis from rawdata
-          obisdata = self._extractObisFromRawData(rawdata)
-          logging.debug('obisdata=%s' %obisdata)
-          if obisdata:
-            # convert obis to usable values
-            values = self._convertObisToValues(obisdata)
-            logging.debug('values=%s' %values)
-            if values:
-              # real power meter data were received
-              if not self._initialized:
+        if self._protocol == 'SML':
+            # use SML Protocol
+            if self._validateChecksum(rawdata):
+                # extract obis from rawdata
+                obisdata = self._extractObisFromSMLRawData(rawdata)
+                logging.debug('obisdata=%s' %obisdata)
+                if obisdata:
+                    # convert obis to usable values
+                    values = self._convertSMLObisToValues(obisdata)
+                    logging.debug('values=%s' %values)
+            else:
+                logging.info('checksum failed for rawdata=%s' %rawdata)
+        elif self._protocol == 'D0':
+            # use D0 Protocol
+            obisdata = self._extractObisFromD0RawData(rawdata)
+            logging.debug('obisdata=%s' %obisdata)
+            if obisdata:
+                # convert obis to usable values
+                values = self._convertD0ObisToValues(obisdata)
+                logging.debug('values=%s' %values)
+
+        if values:
+            # real power meter data were received
+            if not self._initialized:
                 return True
-              if self._postRawdata:
+            if self._postRawdata:
                 values['/Rawdata'] = rawdata
-              for k in values:
+            for k in values:
                 self._dbusservice[k] = values[k]
-              if self._dbusservice['/Connected'] == 0:
+            if self._dbusservice['/Connected'] == 0:
                 logging.info('smartmeter-data received')
                 self._setConnected(1)
-              self._lastUpdate = time.time()
-              news = True
-        else:
-          logging.info('checksum failed for rawdata=%s' %rawdata)
+            self._lastUpdate = time.time()
+            news = True
+
       #if self._lastUpdate+self._timeoutInterval/1000 < time.time():
       #  #raise ConnectionError('No correct data received')
       #  logging.debug('No correct data received')

@@ -1,22 +1,2 @@
 #!/bin/sh
-
-#set -x
-
-##_
-DEV='/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller-if00-port0'
-
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-SERVICE_NAME=$( basename $(realpath $SCRIPT_DIR/.. ) )
-TTY=$( realpath $DEV | sed -n 's/^\/dev\///p' )
-
-echo "*** starting $SERVICE_NAME ***"
-
-echo "$DEV seams to be $TTY"
-
-echo "stopping serial-starter on $TTY"
-/opt/victronenergy/serial-starter/stop-tty.sh $TTY
-
-echo "starting python-script"
-
-exec 2>&1
-python $( realpath $SCRIPT_DIR/../${SERVICE_NAME}.py ) $TTY
+python /data/dbus-d0-smartmeter/dbus-d0-smartmeter.py
